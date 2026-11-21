@@ -15,7 +15,8 @@ Roadmap: https://claude.ai/artifact/XGwTadi1Jh8qRhXy44Ufho
 | Face sorting bake-off CLI (`studio-faces`) | done, needs a run on real photos |
 | FastAPI skeleton (`/health`, `/models`) | done |
 | Frontend (React + React Flow + three.js) | not started |
-| Other model bake-offs (matting, depth, pose, generator) | not started |
+| Extraction bake-off (`studio-bakeoff`: matting, depth, albedo) | done, needs a run on the Mac |
+| Pose, 3D body and generator bake-offs | not started |
 
 ## Setup on the Mac
 
@@ -56,6 +57,18 @@ runner-up by 0.10; ask when it is in between; treat as someone new below 0.35. A
 logistic calibrator replaces the fixed thresholds and auto-files only at 99% estimated precision.
 
 Photos, embeddings and crops never go into git (see `.gitignore`).
+
+## Extraction bake-off
+
+```bash
+make setup                                   # pulls the new "extract" extras
+uv run studio-bakeoff list
+uv run studio-bakeoff run ~/Pictures/studio-test -o runs/bake1 --limit 12
+open runs/bake1/compare.html
+```
+
+Models run one at a time. First run downloads ~3GB of weights from Hugging Face.
+`results.json` has load time, warm-up, median seconds per image and peak memory per model.
 
 ## Layout
 
