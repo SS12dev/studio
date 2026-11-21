@@ -1,4 +1,5 @@
-"""Face-sorting bake-off CLI (phase 0 / phase 1a).
+"""Face-sorting bake-off CLI (phase 0). The app (`studio serve`) is the real people manager;
+this stays for benchmarking models and thresholds on a folder without touching the library.
 
     studio-faces scan    PHOTOS_DIR  -w WORKDIR   detect + embed every face, save crops
     studio-faces cluster             -w WORKDIR   group faces not yet named into Person N
@@ -6,7 +7,6 @@
     studio-faces assign              -w WORKDIR   route unnamed faces: auto / review / new
     studio-faces confirm FACE NAME   -w WORKDIR   answer a review item (NAME or "-" for nobody)
     studio-faces stats               -w WORKDIR   timings, counts, calibration status
-    studio-faces ui                  -w WORKDIR   people page: fix groups, review, filters
 
 Open WORKDIR/report.html after cluster or assign to see the faces.
 """
@@ -249,22 +249,6 @@ def cmd_confirm(args) -> None:
     print(f"recorded ({len(ws.answers)} answers; calibration starts at 50)")
 
 
-def cmd_ui(args) -> None:
-    import threading
-    import webbrowser
-
-    import uvicorn
-
-    from studio.faces.ui import create_app
-
-    url = f"http://127.0.0.1:{args.port}"
-    print(f"people page for {args.workdir} at {url}  (Ctrl+C to stop)")
-    if not args.no_browser:
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    uvicorn.run(create_app(Workspace(args.workdir)), host="127.0.0.1", port=args.port,
-                log_level="warning")
-
-
 # stats --------------------------------------------------------------------
 def cmd_stats(args) -> None:
     ws = Workspace(args.workdir)
@@ -319,9 +303,7 @@ def main(argv=None) -> None:
     f.add_argument("face")
     f.add_argument("name")
     add("stats", cmd_stats)
-    u = add("ui", cmd_ui)
-    u.add_argument("--port", type=int, default=8765)
-    u.add_argument("--no-browser", action="store_true")
+
 
     args = ap.parse_args(argv)
     args.fn(args)

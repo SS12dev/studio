@@ -5,30 +5,41 @@ and rendering the real person into a new pose. Runs on Apple Silicon (built for 
 
 Roadmap: https://claude.ai/artifact/XGwTadi1Jh8qRhXy44Ufho
 
-## Status: phase 0
+## Run the app
+
+```bash
+brew install node            # once, if `node --version` fails
+make setup                   # Python + frontend dependencies
+make app                     # builds the UI, starts http://127.0.0.1:8000 and opens it
+```
+
+Everything is stored under `~/StudioData` (override with `STUDIO_HOME`): `library.sqlite` plus
+`assets/` for thumbnails, face crops and dropped-in photos. Folders you import are read in place,
+never moved or modified.
+
+Developing the UI: `make dev`, then open http://127.0.0.1:5173 (hot reload for both sides).
+
+### What works now
+
+| Area | Feature |
+| --- | --- |
+| Library | Import a folder by path, or drop photos on the page; duplicate detection (SHA-256); JPEG, PNG, TIFF, WebP, HEIC, RAW; progress and cancel; photo grid; viewer with face boxes and names |
+| People | Find groups of unknown faces; name a group; merge by naming or renaming; auto-file new imports against named people; review queue for unsure matches; second pass for low-quality faces with stricter thresholds |
+| Fixes | Not them (sticks across re-matching); move to another person; exclude from training (filters, heavy edits) |
+
+Already named people in a `studio-faces` bake-off run? Import the same folder in the app, then
+`uv run studio import-names runs/faces2` copies those names over.
+
+## Status: phase 0 / 1
 
 | Piece | State |
 | --- | --- |
-| Ingest (JPEG, PNG, TIFF, WebP, HEIC, RAW) | done |
-| Memory-budgeted model manager (LRU, pinning) | done |
+| App: FastAPI + SQLite library + React UI | import and people done |
+| Memory-budgeted model manager (LRU, pinning) | done, not yet wired to the generator |
 | Environment check (`studio-check`) | done |
-| Face sorting bake-off CLI (`studio-faces`) | done, needs a run on real photos |
-| FastAPI skeleton (`/health`, `/models`) | done |
-| People page (`studio-faces ui`): fix groups, review queue, training exclusions | done |
-| Frontend (React + React Flow + three.js) | not started |
+| Face sorting bake-off CLI (`studio-faces`) | done, kept for benchmarking |
 | Extraction bake-off (`studio-bakeoff`: matting, depth, albedo) | done, needs a run on the Mac |
 | Pose, 3D body and generator bake-offs | not started |
-
-## Setup on the Mac
-
-```bash
-xcode-select --install                     # once
-brew install uv ffmpeg                     # once
-git clone git@github.com:<you>/<repo>.git && cd <repo>
-uv sync --python 3.12
-uv run studio-check                        # paste the output into the project thread
-uv run pytest -q
-```
 
 ## Face sorting bake-off
 
@@ -50,12 +61,7 @@ uv run studio-faces scan ~/Pictures/studio-test-2 -w runs/faces1
 uv run studio-faces assign -w runs/faces1
 uv run studio-faces confirm "/path/photo.jpg#0" "Shivam" -w runs/faces1   # or "-" for nobody
 
-# 5. Fix groups by hand in the browser: remove faces that are not the person, move faces
-#    between people, mark filtered/edited photos "exclude from training", answer the review
-#    queue with a click. Removals stick: assign never files that face under that person again.
-uv run studio-faces ui -w runs/faces1
-
-# 6. Timings, memory, accuracy and (after 50 answers) the calibrated threshold
+# 5. Timings, memory, accuracy and (after 50 answers) the calibrated threshold
 uv run studio-faces stats -w runs/faces1
 ```
 
@@ -92,12 +98,16 @@ Models run one at a time. First run downloads ~3GB of weights from Hugging Face.
 
 ```
 backend/studio/
-  api/            FastAPI app
+  api/            FastAPI app (serves frontend/dist at /)
+  library/        Library (db + assets), import jobs
+  people/         grouping, naming, auto-filing, manual fixes
+  db.py           SQLModel tables: Photo, Face, Person, NotPerson, Answer, ImportJob
+  cli.py          `studio serve`, `studio import-names`
   faces/          detect, quality gate, embed, cluster, assign, report, CLI
   models/         model registry + memory-budgeted manager
   ingest.py       any-format image decode
   envcheck.py     what this Mac can run
-frontend/         (phase 1)
+frontend/         React + Vite + TypeScript UI (Library, People)
 tests/            pytest, no models needed
 docs/setup.md     step-by-step checklist
 ```

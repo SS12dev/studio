@@ -1,12 +1,10 @@
 import json
 
 import numpy as np
-from fastapi.testclient import TestClient
 from PIL import Image
 
 from studio.faces import curate
 from studio.faces.cli import main
-from studio.faces.ui import create_app
 from studio.faces.workspace import Workspace
 
 
@@ -62,22 +60,3 @@ def test_move_training_rename_answer(tmp_path):
     assert "Alex" in curate.not_person(ws)[fid]
 
 
-def test_ui_api(tmp_path):
-    ws, ids = make_ws(tmp_path)
-    main(["name", "Person 1", "Alex", "-w", str(ws.root)])
-    c = TestClient(create_app(ws))
-    assert "People" in c.get("/").text
-    st = c.get("/api/state").json()
-    assert len(st["people"]["Alex"]) == 4 and "Person 2" in st["unnamed_groups"]
-    crop = st["people"]["Alex"][0]["crop"]
-    assert c.get(f"/crops/{crop}").status_code == 200
-    assert c.get("/crops/..%2Fpeople.json").status_code == 404
-    assert c.get("/photo", params={"face": ids[0]}).headers["content-type"] == "image/jpeg"
-    assert c.get("/photo", params={"face": "/etc/passwd#0"}).status_code == 404
-    c.post("/api/remove", json={"person": "Alex", "faces": [ids[0]]})
-    c.post("/api/training", json={"faces": [ids[1]], "exclude": True})
-    c.post("/api/move", json={"dst": "Sam", "faces": ws.clusters()["clusters"]["Person 2"]})
-    st = c.get("/api/state").json()
-    assert len(st["people"]["Alex"]) == 3 and st["people"]["Sam"]
-    assert any(t["no_training"] for t in st["people"]["Alex"])
-    assert "Person 2" not in st["unnamed_groups"]
