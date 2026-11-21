@@ -43,8 +43,14 @@ def cmd_scan(args) -> None:
     print(f"model loaded in {load_s:.1f}s, providers={engine.providers}")
 
     th = QualityThresholds(min_face_px=args.min_face)
-    faces, embs, peak_rss, per_image = [], [], proc.memory_info().rss, []
-    photos = list(iter_images(Path(args.photos)))
+    # Append to an existing workspace so new folders can be filed against named people.
+    faces = ws.faces
+    old = ws.embeddings()
+    embs = list(old) if len(faces) else []
+    seen = {f["photo"] for f in faces}
+    peak_rss, per_image = proc.memory_info().rss, []
+    photos = [p for p in iter_images(Path(args.photos).expanduser()) if str(p) not in seen]
+    print(f"{len(photos)} new photos ({len(seen)} already scanned)")
     for n, path in enumerate(photos, 1):
         t = time.perf_counter()
         try:
@@ -70,7 +76,7 @@ def cmd_scan(args) -> None:
     emb = np.vstack(embs) if embs else np.zeros((0, 512), np.float32)
     ws.save_faces(faces, emb)
     stats = {
-        "photos": len(photos), "faces": len(faces),
+        "new_photos": len(photos), "total_photos": len(seen) + len(photos), "faces": len(faces),
         "usable_faces": sum(f["usable"] for f in faces),
         "model_load_s": round(load_s, 2),
         "median_s_per_photo": round(float(np.median(per_image)), 3) if per_image else None,

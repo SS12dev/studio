@@ -42,3 +42,36 @@ def test_cluster_name_assign_confirm(tmp_path, capsys):
     main(["confirm", ids[4], "Alex", "-w", str(tmp_path)])
     assert ws.answers[-1]["correct"] is True
     assert (tmp_path / "report.html").exists()
+
+
+def test_scan_appends(tmp_path, monkeypatch):
+    """A second scan adds new photos and keeps the first scan's faces and embeddings."""
+    import types
+
+    from PIL import Image
+
+    import studio.faces.engine as engine_mod
+
+    class FakeEngine:
+        providers = ["CPU"]
+
+        def __init__(self, **kw):
+            pass
+
+        def __call__(self, rgb):
+            v = np.ones(512, np.float32) / np.sqrt(512)
+            return [types.SimpleNamespace(bbox=[0, 0, 80, 80], det_score=0.9, kps=None,
+                                          normed_embedding=v)]
+
+    monkeypatch.setattr(engine_mod, "FaceEngine", FakeEngine)
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir(); b.mkdir()
+    noise = (np.random.default_rng(0).random((100, 100, 3)) * 255).astype(np.uint8)
+    Image.fromarray(noise).save(a / "1.jpg")
+    Image.fromarray(noise).save(b / "2.jpg")
+    ws_dir = tmp_path / "ws"
+    main(["scan", str(a), "-w", str(ws_dir)])
+    main(["scan", str(b), "-w", str(ws_dir)])
+    main(["scan", str(a), "-w", str(ws_dir)])  # re-scan is a no-op
+    ws = Workspace(ws_dir)
+    assert len(ws.faces) == 2 and ws.embeddings().shape == (2, 512)

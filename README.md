@@ -41,8 +41,9 @@ open runs/faces1/report.html
 # 3. Name the groups you recognise
 uv run studio-faces name "Person 1" "Shivam" -w runs/faces1
 
-# 4. Add more photos later, then file them: confident ones go straight in,
-#    uncertain ones land in "Needs your answer"
+# 4. Scan a second folder into the same workspace (only new photos are processed),
+#    then file them: confident ones go straight in, uncertain ones land in "Needs your answer"
+uv run studio-faces scan ~/Pictures/studio-test-2 -w runs/faces1
 uv run studio-faces assign -w runs/faces1
 uv run studio-faces confirm "/path/photo.jpg#0" "Shivam" -w runs/faces1   # or "-" for nobody
 
