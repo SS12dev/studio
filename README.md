@@ -14,6 +14,7 @@ Roadmap: https://claude.ai/artifact/XGwTadi1Jh8qRhXy44Ufho
 | Environment check (`studio-check`) | done |
 | Face sorting bake-off CLI (`studio-faces`) | done, needs a run on real photos |
 | FastAPI skeleton (`/health`, `/models`) | done |
+| People page (`studio-faces ui`): fix groups, review queue, training exclusions | done |
 | Frontend (React + React Flow + three.js) | not started |
 | Extraction bake-off (`studio-bakeoff`: matting, depth, albedo) | done, needs a run on the Mac |
 | Pose, 3D body and generator bake-offs | not started |
@@ -49,7 +50,12 @@ uv run studio-faces scan ~/Pictures/studio-test-2 -w runs/faces1
 uv run studio-faces assign -w runs/faces1
 uv run studio-faces confirm "/path/photo.jpg#0" "Shivam" -w runs/faces1   # or "-" for nobody
 
-# 5. Timings, memory, accuracy and (after 50 answers) the calibrated threshold
+# 5. Fix groups by hand in the browser: remove faces that are not the person, move faces
+#    between people, mark filtered/edited photos "exclude from training", answer the review
+#    queue with a click. Removals stick: assign never files that face under that person again.
+uv run studio-faces ui -w runs/faces1
+
+# 6. Timings, memory, accuracy and (after 50 answers) the calibrated threshold
 uv run studio-faces stats -w runs/faces1
 ```
 

@@ -6,6 +6,7 @@
     studio-faces assign              -w WORKDIR   route unnamed faces: auto / review / new
     studio-faces confirm FACE NAME   -w WORKDIR   answer a review item (NAME or "-" for nobody)
     studio-faces stats               -w WORKDIR   timings, counts, calibration status
+    studio-faces ui                  -w WORKDIR   people page: fix groups, review, filters
 
 Open WORKDIR/report.html after cluster or assign to see the faces.
 """
@@ -22,6 +23,7 @@ from pathlib import Path
 import numpy as np
 import psutil
 
+from studio.faces import curate
 from studio.faces.assign import Calibrator, PeopleIndex, RoutingThresholds, decide
 from studio.faces.cluster import DEFAULT_LINK_SIM, cluster_embeddings, merge_suggestions
 from studio.faces.quality import QualityThresholds, assess
@@ -191,6 +193,7 @@ def cmd_assign(args) -> None:
                                args.auto_margin + args.strict_extra / 2,
                                args.new_below + args.strict_extra)
     named = _named_ids(ws)
+    refused = curate.not_person(ws)  # faces you said are not a given person
     buckets: dict[str, list] = {"auto": [], "review": [], "new": [], "still_set_aside": []}
     decisions = {}
     second_pass = 0
@@ -207,6 +210,12 @@ def cmd_assign(args) -> None:
                 continue
         else:
             d = decide(emb[i], idx, th, cal)
+        if d.person in refused.get(f["id"], []):
+            # You already said this face is not them: never auto-file it there again.
+            alt = d.runner_up if d.runner_up not in refused.get(f["id"], []) else None
+            d = d.__class__("review", alt, d.score, None, d.margin, d.confidence)
+            if alt is None:
+                continue
         decisions[f["id"]] = {**d.__dict__, "second_pass": not f["usable"]}
         tag = " (2nd pass)" if not f["usable"] else ""
         cap = (f"{d.person} {d.score:.2f}" + (f" p={d.confidence:.2f}" if d.confidence else "")
@@ -234,22 +243,26 @@ def cmd_assign(args) -> None:
 # confirm ------------------------------------------------------------------
 def cmd_confirm(args) -> None:
     ws = Workspace(args.workdir)
-    dec_path = ws.root / "decisions.json"
-    decisions = json.loads(dec_path.read_text()) if dec_path.exists() else {}
-    d = decisions.get(args.face)
-    if d is None:
+    if args.face not in curate._decisions(ws):
         sys.exit("face not in the last assign run")
-    people = ws.people
-    if args.name != "-":
-        people.setdefault(args.name, [])
-        if args.face not in people[args.name]:
-            people[args.name].append(args.face)
-        ws.save_people(people)
-    answers = ws.answers
-    answers.append({"face": args.face, "guess": d["person"], "score": d["score"],
-                    "margin": d["margin"], "correct": args.name == d["person"]})
-    ws.save_answers(answers)
-    print(f"recorded ({len(answers)} answers; calibration starts at 50)")
+    curate.answer(ws, args.face, None if args.name == "-" else args.name)
+    print(f"recorded ({len(ws.answers)} answers; calibration starts at 50)")
+
+
+def cmd_ui(args) -> None:
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    from studio.faces.ui import create_app
+
+    url = f"http://127.0.0.1:{args.port}"
+    print(f"people page for {args.workdir} at {url}  (Ctrl+C to stop)")
+    if not args.no_browser:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    uvicorn.run(create_app(Workspace(args.workdir)), host="127.0.0.1", port=args.port,
+                log_level="warning")
 
 
 # stats --------------------------------------------------------------------
@@ -306,6 +319,9 @@ def main(argv=None) -> None:
     f.add_argument("face")
     f.add_argument("name")
     add("stats", cmd_stats)
+    u = add("ui", cmd_ui)
+    u.add_argument("--port", type=int, default=8765)
+    u.add_argument("--no-browser", action="store_true")
 
     args = ap.parse_args(argv)
     args.fn(args)
