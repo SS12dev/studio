@@ -4,7 +4,7 @@ Do these in order. Each one is independent of the code work happening in paralle
 
 1. **Clone the repo** into something like `~/dev/studio`, outside Desktop/Documents so iCloud does not sync model files.
 2. **Install tools:** `xcode-select --install`, then `brew install uv ffmpeg`.
-3. **Install and check:** `uv sync --python 3.12 --extra faces --extra raw --extra mac --extra dev`, then `uv run studio-check` and `uv run pytest -q`. Paste the `studio-check` output into the project thread.
+3. **Install and check:** `uv sync --python 3.12`, then `uv run studio-check` and `uv run pytest -q`. Paste the `studio-check` output into the project thread.
 4. **Free disk space:** aim for 150GB free. `df -h ~` shows it.
 5. **Accounts (free):**
    - Hugging Face account + a read token (Settings > Access Tokens). Run `uv run huggingface-cli login`.

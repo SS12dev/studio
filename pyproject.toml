@@ -15,12 +15,13 @@ dependencies = [
     "psutil>=6.0",
 ]
 
-[project.optional-dependencies]
-# Face sorting stack (phase 1a). insightface builds a small C extension on install.
+# Optional stacks as dependency groups. `default-groups = "all"` (below) makes a plain
+# `uv sync` / `uv run` install every group, so nothing gets dropped by accident.
+[dependency-groups]
+# Face sorting stack (phase 1a). insightface brings opencv-python; do not add the headless build too.
 faces = [
     "insightface>=0.7.3",
     "onnxruntime>=1.19",
-    "opencv-python-headless>=4.10",
 ]
 # Camera RAW decoding.
 raw = ["rawpy>=0.22"]
@@ -53,6 +54,9 @@ packages = ["backend/studio"]
 studio-check = "studio.envcheck:main"
 studio-faces = "studio.faces.cli:main"
 studio-bakeoff = "studio.bakeoff.cli:main"
+
+[tool.uv]
+default-groups = "all"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

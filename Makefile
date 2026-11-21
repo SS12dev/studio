@@ -1,7 +1,7 @@
 .PHONY: setup check test api
 
 setup:
-	uv sync --python 3.12 --extra faces --extra raw --extra mac --extra extract --extra dev
+	uv sync --python 3.12
 
 check:
 	uv run studio-check

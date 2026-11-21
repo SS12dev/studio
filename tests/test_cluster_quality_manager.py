@@ -24,7 +24,7 @@ def test_quality_rejects_small_and_blurry():
     sharp = (np.indices((96, 96)).sum(0) % 2 * 255).astype(np.uint8)
     rgb = np.repeat(sharp[:, :, None], 3, 2)
     assert assess(rgb, (0, 0, 96, 96), 0.9, None)[0]
-    assert assess(rgb, (0, 0, 40, 40), 0.9, None)[1] == "too_small"
+    assert assess(rgb, (0, 0, 30, 30), 0.9, None)[1] == "too_small"
     flat = np.full((96, 96, 3), 128, np.uint8)
     assert assess(flat, (0, 0, 96, 96), 0.9, None)[1] == "blurry"
     assert laplacian_variance(sharp) > laplacian_variance(flat[:, :, 0])
@@ -51,3 +51,27 @@ def test_model_manager_lru_and_pins():
     mm.register(ModelSpec("huge", "x", "cpu", 11, "t", loader=lambda: 0))
     with pytest.raises(BudgetExceeded):
         mm.get("huge")
+
+
+def test_average_linkage_keeps_one_person_with_several_looks_together():
+    """Regression for the first real run: HDBSCAN split people with varied looks into many groups."""
+    from sklearn.metrics import adjusted_rand_score
+
+    rng = np.random.default_rng(0)
+    sizes = [129, 86, 20, 15, 14, 12, 10] + [6] * 10 + [1] * 60
+    X, y = [], []
+    for pid, n in enumerate(sizes):
+        c = rng.standard_normal(512)
+        c /= np.linalg.norm(c)
+        looks = [c] + [c + 0.06 * rng.standard_normal(512) for _ in range(3)]
+        for _ in range(n):
+            v = looks[rng.integers(4)] + 0.04 * rng.standard_normal(512)
+            X.append(v / np.linalg.norm(v))
+            y.append(pid)
+    X, y = np.array(X), np.array(y)
+    labels = cluster_embeddings(X, 3)
+    multi = y < 17  # people with 3+ photos
+    assert len(set(labels.tolist()) - {-1}) == 17
+    assert adjusted_rand_score(y[multi], labels[multi]) > 0.99
+    assert (labels[~multi] == -1).all()  # one-off strangers stay unclustered
+    assert merge_suggestions(X, labels) == []

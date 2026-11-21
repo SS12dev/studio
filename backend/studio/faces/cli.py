@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 import sys
 import time
 from pathlib import Path
@@ -22,7 +23,7 @@ import numpy as np
 import psutil
 
 from studio.faces.assign import Calibrator, PeopleIndex, RoutingThresholds, decide
-from studio.faces.cluster import cluster_embeddings, merge_suggestions
+from studio.faces.cluster import DEFAULT_LINK_SIM, cluster_embeddings, merge_suggestions
 from studio.faces.quality import QualityThresholds, assess
 from studio.faces.report import write_report
 from studio.faces.workspace import Workspace
@@ -36,9 +37,13 @@ def cmd_scan(args) -> None:
     from studio.faces.engine import FaceEngine
 
     ws = Workspace(args.workdir)
+    pack = ws.meta.get("model_pack")
+    if pack and pack != args.model:
+        sys.exit(f"this workspace was scanned with {pack}; use a new -w folder for {args.model}")
+    ws.save_meta({**ws.meta, "model_pack": args.model})
     proc = psutil.Process()
     t0 = time.perf_counter()
-    engine = FaceEngine(det_size=args.det_size)
+    engine = FaceEngine(model_pack=args.model, det_size=args.det_size)
     load_s = time.perf_counter() - t0
     print(f"model loaded in {load_s:.1f}s, providers={engine.providers}")
 
@@ -82,6 +87,8 @@ def cmd_scan(args) -> None:
         "median_s_per_photo": round(float(np.median(per_image)), 3) if per_image else None,
         "peak_rss_gb": round(peak_rss / 1e9, 2),
         "providers": engine.providers,
+        "model_pack": args.model,
+        "set_aside_reasons": dict(Counter(f["reject_reason"] for f in faces if not f["usable"])),
     }
     (ws.root / "scan_stats.json").write_text(json.dumps(stats, indent=2))
     print(json.dumps(stats, indent=2))
@@ -119,7 +126,8 @@ def cmd_cluster(args) -> None:
     faces, emb = ws.faces, ws.embeddings()
     named = _named_ids(ws)
     rows = [i for i, f in enumerate(faces) if f["usable"] and f["id"] not in named]
-    labels = cluster_embeddings(emb[rows], args.min_cluster) if rows else np.array([], int)
+    labels = (cluster_embeddings(emb[rows], args.min_cluster, args.link_sim)
+              if rows else np.array([], int))
     clusters: dict[str, list[str]] = {}
     for r, lab in zip(rows, labels.tolist()):
         key = f"Person {lab + 1}" if lab >= 0 else "Unclustered"
@@ -138,10 +146,14 @@ def cmd_cluster(args) -> None:
     sections.append(("Set aside (quality)", "Too small, blurry, or turned away.",
                      [(f["id"], f["reject_reason"], "new") for f in rejected]))
     out = write_report(ws, sections)
-    print(f"{len(order)} clusters, {len(clusters.get('Unclustered', []))} unclustered, "
-          f"{len(rejected)} set aside")
+    reasons = dict(Counter(f["reject_reason"] for f in rejected))
+    print(f"{len(order)} groups, {len(clusters.get('Unclustered', []))} unclustered, "
+          f"{len(rejected)} set aside {reasons}")
+    print("largest groups: " + ", ".join(f"{k} ({len(clusters[k])})" for k in order[:10]))
+    if merges:
+        print("maybe the same person (name both with the same name to merge):")
     for a, b, s in merges:
-        print(f"  maybe the same person: {a} and {b} (similarity {s})")
+        print(f"  {a} + {b}  (avg similarity {s})")
     print(f"open {out}")
 
 
@@ -242,9 +254,13 @@ def main(argv=None) -> None:
     s = add("scan", cmd_scan)
     s.add_argument("photos")
     s.add_argument("--det-size", type=int, default=640)
-    s.add_argument("--min-face", type=int, default=64)
+    s.add_argument("--min-face", type=int, default=40)
+    s.add_argument("--model", default="buffalo_l", choices=["buffalo_l", "antelopev2"])
     c = add("cluster", cmd_cluster)
     c.add_argument("--min-cluster", type=int, default=3)
+    c.add_argument("--link-sim", type=float, default=DEFAULT_LINK_SIM,
+                   help="join groups whose average similarity is at least this (lower = fewer, "
+                        "bigger groups; raise it if different people get merged)")
     n = add("name", cmd_name)
     n.add_argument("cluster")
     n.add_argument("name")

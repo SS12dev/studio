@@ -58,6 +58,13 @@ class Workspace:
     def save_answers(self, answers: list[dict]) -> None:
         self._write("answers.json", answers)
 
+    @property
+    def meta(self) -> dict:
+        return self._read("meta.json", {})
+
+    def save_meta(self, meta: dict) -> None:
+        self._write("meta.json", meta)
+
     def clusters(self) -> dict:
         return self._read("clusters.json", {})
 

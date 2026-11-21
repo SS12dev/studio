@@ -24,7 +24,7 @@ Roadmap: https://claude.ai/artifact/XGwTadi1Jh8qRhXy44Ufho
 xcode-select --install                     # once
 brew install uv ffmpeg                     # once
 git clone git@github.com:<you>/<repo>.git && cd <repo>
-uv sync --python 3.12 --extra faces --extra raw --extra mac --extra dev
+uv sync --python 3.12
 uv run studio-check                        # paste the output into the project thread
 uv run pytest -q
 ```
@@ -52,6 +52,13 @@ uv run studio-faces confirm "/path/photo.jpg#0" "Shivam" -w runs/faces1   # or "
 uv run studio-faces stats -w runs/faces1
 ```
 
+Grouping uses average-linkage clustering at a 0.25 average cosine similarity. If two different
+people end up in one group, re-run `cluster --link-sim 0.3`; if one person is split across groups,
+try `--link-sim 0.2`, or just give both groups the same name to merge them.
+
+For a stronger (slower) recogniser, scan into a fresh workspace with `--model antelopev2`.
+Workspaces are tied to the model they were scanned with.
+
 Routing defaults: auto-file when the best match scores at least 0.55 cosine **and** beats the
 runner-up by 0.10; ask when it is in between; treat as someone new below 0.35. After 50 answers a
 logistic calibrator replaces the fixed thresholds and auto-files only at 99% estimated precision.
@@ -61,7 +68,7 @@ Photos, embeddings and crops never go into git (see `.gitignore`).
 ## Extraction bake-off
 
 ```bash
-make setup                                   # pulls the new "extract" extras
+make setup                                   # installs every dependency group
 uv run studio-bakeoff list
 uv run studio-bakeoff run ~/Pictures/studio-test -o runs/bake1 --limit 12
 open runs/bake1/compare.html
