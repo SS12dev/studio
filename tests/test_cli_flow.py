@@ -3,7 +3,6 @@
 import json
 
 import numpy as np
-
 from studio.faces.cli import main
 from studio.faces.workspace import Workspace
 
@@ -48,9 +47,8 @@ def test_scan_appends(tmp_path, monkeypatch):
     """A second scan adds new photos and keeps the first scan's faces and embeddings."""
     import types
 
-    from PIL import Image
-
     import studio.faces.engine as engine_mod
+    from PIL import Image
 
     class FakeEngine:
         providers = ["CPU"]

@@ -83,7 +83,7 @@ export default function Library({ onChange }: { onChange: () => void }) {
         </>
       )}
       {dragging && <div className="dropzone">Drop photos to import</div>}
-      {open !== null && <PhotoViewer photoId={open} onClose={() => setOpen(null)} />}
+      {open !== null && <PhotoViewer photoId={open} onClose={() => setOpen(null)} onChange={onChange} />}
     </main>
   );
 }

@@ -25,7 +25,9 @@ Developing the UI: `make dev`, then open http://127.0.0.1:5173 (hot reload for b
 | --- | --- |
 | Library | Import a folder by path, or drop photos on the page; duplicate detection (SHA-256); JPEG, PNG, TIFF, WebP, HEIC, RAW; progress and cancel; photo grid; viewer with face boxes and names |
 | People | Find groups of unknown faces; name a group; merge by naming or renaming; auto-file new imports against named people; review queue for unsure matches; second pass for low-quality faces with stricter thresholds |
-| Fixes | Not them (sticks across re-matching); move to another person; exclude from training (filters, heavy edits) |
+| Fixes | Not them (sticks across re-matching); move to another person or a new one; exclude from training (filters, heavy edits); not a face; delete person |
+| Photo viewer | Click any face to name it, create a new person, or mark it not them / not a face; draw a box for a face the detector missed (the detector re-runs on your box); after moving a face out of a person, shows other faces in that person that look like it |
+| One person per photo | Naming a group or auto-filing never puts one person on two faces in the same photo; "Same person twice" lists older mistakes of this kind |
 
 Already named people in a `studio-faces` bake-off run? Import the same folder in the app, then
 `uv run studio import-names runs/faces2` copies those names over.

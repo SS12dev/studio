@@ -6,7 +6,7 @@ the database only stores their file names.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 from sqlalchemy import Column, LargeBinary, event
@@ -14,7 +14,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Photo(SQLModel, table=True):
@@ -63,6 +63,8 @@ class Face(SQLModel, table=True):
     second_pass: bool = False
     group_key: int | None = Field(default=None, index=True)  # unnamed group from clustering
     no_training: bool = False  # it's them, but filtered/edited: keep out of training sets
+    not_face: bool = False  # detector false positive, marked by you; hidden everywhere
+    manual: bool = False  # box drawn by you in the photo viewer
 
     def vector(self) -> np.ndarray:
         return np.frombuffer(self.embedding, dtype=np.float32)
@@ -114,7 +116,24 @@ def make_engine(url: str):
         cur.close()
 
     SQLModel.metadata.create_all(engine)
+    _add_missing_columns(engine)
     return engine
+
+
+def _add_missing_columns(engine) -> None:
+    """Tiny forward-only migration: add new boolean/nullable columns to existing tables."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in have:
+                    continue
+                kind = column.type.compile(engine.dialect)
+                default = " NOT NULL DEFAULT 0" if kind == "BOOLEAN" else ""
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}{default}'))
 
 
 def session(engine) -> Session:

@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-
 from studio.api.main import create_app
 from studio.library.core import Library
 
@@ -144,8 +143,8 @@ def test_review_answer_records_calibration_data(client):
     assert len(c.get("/api/review").json()) == 1
     c.post("/api/faces/answer", json={"face_id": 1, "name": "Shivam"})
     assert c.get("/api/review").json() == []
-    from studio.db import Answer
     from sqlmodel import select
+    from studio.db import Answer
 
     with lib.session() as s:
         assert s.exec(select(Answer)).one().correct is True

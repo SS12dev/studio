@@ -21,7 +21,7 @@ from sqlmodel import col, select
 from studio import __version__
 from studio.config import settings
 from studio.db import Face, ImportJob, Person, Photo
-from studio.library import importer
+from studio.library import importer, manual
 from studio.library.core import Library
 from studio.people import service as people
 
@@ -63,6 +63,14 @@ class AnswerReq(BaseModel):
     name: str | None = None
 
 
+class NotFaceReq(FaceIds):
+    value: bool = True
+
+
+class BoxReq(BaseModel):
+    box: tuple[float, float, float, float]
+
+
 class GroupReq(BaseModel):
     link_sim: float = 0.25
 
@@ -72,6 +80,7 @@ def _face_json(f: Face, photo: Photo | None = None) -> dict:
             "person_id": f.person_id, "source": f.source, "guess_person_id": f.guess_person_id,
             "score": f.score, "usable": f.usable, "reject_reason": f.reject_reason,
             "second_pass": f.second_pass, "no_training": f.no_training,
+            "not_face": f.not_face, "manual": f.manual,
             "filename": photo.filename if photo else None,
             "thumb": f"/media/thumbs/{photo.thumb}" if photo and photo.thumb else None}
 
@@ -205,7 +214,8 @@ def create_app(lib: Library | None = None) -> FastAPI:
     @app.get("/api/groups")
     def groups() -> list[dict]:
         with lib.session() as s:
-            rows = s.exec(select(Face, Photo).join(Photo).where(Face.group_key.is_not(None))).all()
+            rows = s.exec(select(Face, Photo).join(Photo).where(Face.group_key.is_not(None),
+                                                                 Face.not_face.is_(False))).all()
         out: dict[int, list] = {}
         for f, p in rows:
             out.setdefault(f.group_key, []).append(_face_json(f, p))
@@ -224,7 +234,8 @@ def create_app(lib: Library | None = None) -> FastAPI:
     @app.get("/api/review")
     def review() -> list[dict]:
         with lib.session() as s:
-            rows = s.exec(select(Face, Photo).join(Photo).where(Face.source == "review")
+            rows = s.exec(select(Face, Photo).join(Photo).where(Face.source == "review",
+                                                               Face.not_face.is_(False))
                           .order_by(col(Face.score).desc())).all()
             return [_face_json(f, p) for f, p in rows]
 
@@ -233,7 +244,8 @@ def create_app(lib: Library | None = None) -> FastAPI:
         with lib.session() as s:
             rows = s.exec(select(Face, Photo).join(Photo).where(
                 Face.person_id.is_(None), Face.group_key.is_(None),
-                (Face.source.is_(None))).limit(limit)).all()
+                Face.source.is_(None), Face.not_face.is_(False))
+                .order_by(col(Face.usable).desc(), col(Face.id)).limit(limit)).all()
             return [_face_json(f, p) for f, p in rows]
 
     @app.post("/api/people/auto-file")
@@ -259,6 +271,43 @@ def create_app(lib: Library | None = None) -> FastAPI:
         people.answer(lib, req.face_id, req.name)
         return {"ok": True}
 
+    @app.post("/api/faces/not-face")
+    def faces_not_face(req: NotFaceReq) -> dict:
+        people.set_not_face(lib, req.face_ids, req.value)
+        return {"ok": True}
+
+    @app.get("/api/faces/{face_id}/similar")
+    def faces_similar(face_id: int, person_id: int) -> list[dict]:
+        hits = people.similar_in(lib, face_id, person_id)
+        with lib.session() as s:
+            return [{**_face_json(f, s.get(Photo, f.photo_id)), "sim": round(sim, 3)}
+                    for f, sim in hits]
+
+    @app.post("/api/photos/{photo_id}/faces")
+    def photo_add_face(photo_id: int, req: BoxReq) -> dict:
+        try:
+            f = manual.add_face(lib, photo_id, req.box)
+        except KeyError:
+            raise HTTPException(404) from None
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+        return {"face_id": f.id, "found": f.reject_reason != "no_embedding"}
+
+    @app.get("/api/conflicts")
+    def conflicts() -> list[dict]:
+        rows = people.conflicts(lib)
+        with lib.session() as s:
+            names = {x.id: x.name for x in s.exec(select(Person)).all()}
+            return [{"photo_id": r["photo_id"], "person_id": r["person_id"],
+                     "person": names.get(r["person_id"]),
+                     "faces": [_face_json(f, s.get(Photo, f.photo_id)) for f in r["faces"]]}
+                    for r in rows]
+
+    @app.post("/api/people/{person_id}/delete")
+    def person_delete(person_id: int) -> dict:
+        people.delete_person(lib, person_id)
+        return {"ok": True}
+
     @app.get("/api/stats")
     def stats() -> dict:
         with lib.session() as s:
@@ -272,7 +321,9 @@ def create_app(lib: Library | None = None) -> FastAPI:
                         Face.group_key.is_not(None))).all()}),
                     "unsorted": n(select(Face).where(Face.person_id.is_(None),
                                                      Face.group_key.is_(None),
-                                                     Face.source.is_(None)))}
+                                                     Face.source.is_(None),
+                                                     Face.not_face.is_(False))),
+                    "conflicts": len(people.conflicts(lib))}
 
     # frontend -----------------------------------------------------------------
     if FRONTEND_DIST.exists():

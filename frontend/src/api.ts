@@ -14,7 +14,9 @@ export type FaceItem = {
   person_id: number | null; source: "confirmed" | "auto" | "review" | null;
   guess_person_id: number | null; score: number | null; usable: boolean;
   reject_reason: string | null; second_pass: boolean; no_training: boolean;
+  not_face: boolean; manual: boolean;
 };
+export type Conflict = { photo_id: number; person_id: number; person: string; faces: FaceItem[] };
 export type PersonItem = {
   id: number; name: string; faces: number; confirmed: number; no_training: number;
   cover: string | null;
@@ -22,6 +24,7 @@ export type PersonItem = {
 export type Group = { key: number; faces: FaceItem[] };
 export type Stats = {
   photos: number; faces: number; people: number; review: number; groups: number; unsorted: number;
+  conflicts: number;
 };
 export type PhotoDetail = {
   id: number; filename: string; path: string; width: number; height: number;
@@ -69,4 +72,11 @@ export const api = {
   move: (face_ids: number[], name: string) => post<{ person_id: number }>("/api/faces/move", { face_ids, name }),
   training: (face_ids: number[], exclude: boolean) => post("/api/faces/training", { face_ids, exclude }),
   answer: (face_id: number, name: string | null) => post("/api/faces/answer", { face_id, name }),
+  notFace: (face_ids: number[], value = true) => post("/api/faces/not-face", { face_ids, value }),
+  similar: (face_id: number, person_id: number) =>
+    req<(FaceItem & { sim: number })[]>(`/api/faces/${face_id}/similar?person_id=${person_id}`),
+  addFace: (photo_id: number, box: [number, number, number, number]) =>
+    post<{ face_id: number; found: boolean }>(`/api/photos/${photo_id}/faces`, { box }),
+  conflicts: () => req<Conflict[]>("/api/conflicts"),
+  deletePerson: (id: number) => post(`/api/people/${id}/delete`),
 };

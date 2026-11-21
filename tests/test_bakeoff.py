@@ -2,7 +2,6 @@ import json
 
 import numpy as np
 from PIL import Image
-
 from studio.bakeoff import cli
 from studio.bakeoff.runners import Runner
 

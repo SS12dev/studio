@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type FaceItem, type Group, type PersonItem } from "../api";
+import { api, type Conflict, type FaceItem, type Group, type PersonItem } from "../api";
 import FaceGrid from "../components/FaceGrid";
+import PhotoViewer from "../components/PhotoViewer";
 
 type View =
   | { kind: "review" }
   | { kind: "person"; id: number }
   | { kind: "group"; key: number }
-  | { kind: "unsorted" };
+  | { kind: "unsorted" }
+  | { kind: "conflicts" };
 
 export default function People({ onChange }: { onChange: () => void }) {
   const [people, setPeople] = useState<PersonItem[]>([]);
@@ -20,12 +22,15 @@ export default function People({ onChange }: { onChange: () => void }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [open, setOpen] = useState<FaceItem | null>(null);
+  const [armDelete, setArmDelete] = useState(false);
 
   const names = useMemo(() => Object.fromEntries(people.map((p) => [p.id, p.name])), [people]);
 
   const refresh = useCallback(async () => {
-    const [p, g, r] = await Promise.all([api.people(), api.groups(), api.review()]);
-    setPeople(p); setGroups(g); setReview(r);
+    const [p, g, r, c] = await Promise.all([api.people(), api.groups(), api.review(), api.conflicts()]);
+    setPeople(p); setGroups(g); setReview(r); setConflicts(c);
     onChange();
     return { p, g, r };
   }, [onChange]);
@@ -38,11 +43,12 @@ export default function People({ onChange }: { onChange: () => void }) {
   useEffect(() => {
     refresh().then(({ p, r }) => { if (!r.length && p.length) setView({ kind: "person", id: p[0].id }); });
   }, []); // eslint-disable-line
-  useEffect(() => { setSel(new Set()); loadView(view); }, [view, loadView]);
+  useEffect(() => { setSel(new Set()); setArmDelete(false); loadView(view); }, [view, loadView]);
 
   const shown: FaceItem[] =
     view.kind === "review" ? review :
-    view.kind === "group" ? groups.find((g) => g.key === view.key)?.faces ?? [] : faces;
+    view.kind === "group" ? groups.find((g) => g.key === view.key)?.faces ?? [] :
+    view.kind === "conflicts" ? conflicts.flatMap((c) => c.faces) : faces;
 
   const run = async (fn: () => Promise<unknown>, msg?: string) => {
     setBusy(true); setNote("");
@@ -54,8 +60,18 @@ export default function People({ onChange }: { onChange: () => void }) {
   const need = (what: string) => { setNote(`⚠ ${what}`); return false; };
 
   const act = {
-    notThem: () => view.kind === "person" && (sel.size || need("select faces first")) &&
-      run(() => api.remove(view.id, ids())),
+    notThem: () => (sel.size || need("select faces first")) && run(async () => {
+      const by: Record<number, number[]> = {};
+      for (const f of shown.filter((x) => sel.has(x.id) && x.person_id)) (by[f.person_id!] ??= []).push(f.id);
+      for (const [pid, fids] of Object.entries(by)) await api.remove(Number(pid), fids);
+    }),
+    notFace: () => (sel.size || need("select faces first")) &&
+      run(() => api.notFace(ids()), `${sel.size} marked as not a face. They're hidden everywhere now.`),
+    deletePerson: () => {
+      if (view.kind !== "person") return;
+      if (!armDelete) { setArmDelete(true); setNote("Click again to delete. Their faces go back to Unsorted."); return; }
+      run(async () => { await api.deletePerson(view.id); setArmDelete(false); setView({ kind: "review" }); });
+    },
     training: (exclude: boolean) => (sel.size || need("select faces first")) &&
       run(() => api.training(ids(), exclude)),
     moveTo: () => (sel.size || need("select faces first")) && (name.trim() || need("type a name")) &&
@@ -85,11 +101,12 @@ export default function People({ onChange }: { onChange: () => void }) {
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === "INPUT") return;
+      if ((e.target as HTMLElement).tagName === "INPUT" || open) return;
       const key = e.key.toLowerCase();
       if (key === "escape") setSel(new Set());
       else if (key === "a" && !e.metaKey) setSel(new Set(shown.map((f) => f.id)));
       else if (key === "r") view.kind === "review" ? act.reject() : act.notThem();
+      else if (key === "f") act.notFace();
       else if (key === "t") act.training(!shown.filter((f) => sel.has(f.id)).every((f) => f.no_training));
       else if (key === "y" && view.kind === "review") act.accept();
     };
@@ -99,6 +116,7 @@ export default function People({ onChange }: { onChange: () => void }) {
 
   const person = view.kind === "person" ? people.find((p) => p.id === view.id) : undefined;
   const title = view.kind === "review" ? "Needs your answer" : view.kind === "unsorted" ? "Unsorted faces" :
+    view.kind === "conflicts" ? "Same person twice in a photo" :
     view.kind === "group" ? `Unnamed group` : person?.name ?? "";
 
   return (
@@ -107,6 +125,8 @@ export default function People({ onChange }: { onChange: () => void }) {
         <h4>Review</h4>
         <a className={view.kind === "review" ? "on" : ""} onClick={() => setView({ kind: "review" })}>
           Needs your answer <small>{review.length}</small></a>
+        <a className={view.kind === "conflicts" ? "on" : ""} onClick={() => setView({ kind: "conflicts" })}>
+          Same person twice <small>{conflicts.length || ""}</small></a>
         <h4>People</h4>
         {people.map((p) => (
           <a key={p.id} className={view.kind === "person" && view.id === p.id ? "on" : ""}
@@ -144,8 +164,15 @@ export default function People({ onChange }: { onChange: () => void }) {
             <button className="warn" disabled={busy} onClick={act.notThem}>Not them (R)</button>
             <button disabled={busy} onClick={() => act.training(true)}>Exclude from training (T)</button>
             <button disabled={busy} onClick={() => act.training(false)}>Include</button>
-            <button disabled={busy} onClick={act.moveTo}>Move to name</button>
+            <button disabled={busy} onClick={act.moveTo} title="Moves selected faces; creates the person if the name is new">
+              Move to name / new person</button>
             <button disabled={busy} onClick={act.rename}>Rename to</button>
+            <button className={armDelete ? "warn primary" : "warn"} disabled={busy} onClick={act.deletePerson}>
+              {armDelete ? "Confirm delete" : "Delete person"}</button>
+          </>}
+          {view.kind === "conflicts" && <>
+            <button className="warn" disabled={busy} onClick={act.notThem}>Not them (R)</button>
+            <button disabled={busy} onClick={act.moveTo}>Move to name / new person</button>
           </>}
           {view.kind === "group" && (
             <button className="primary" disabled={busy} onClick={act.nameGroup}>
@@ -156,22 +183,34 @@ export default function People({ onChange }: { onChange: () => void }) {
           </>}
         </div>
         {note && <div className="note">{note}</div>}
-        <FaceGrid faces={shown} selected={sel} setSelected={setSel} onHover={setHover}
+        {sel.size > 0 && (
+          <div className="note">
+            <button className="warn" disabled={busy} onClick={act.notFace}>Not a face (F)</button>
+            <span className="muted small"> for crops that aren't a face. Double-click any face to open its photo,
+              where you can draw the right box.</span>
+          </div>)}
+        {view.kind === "conflicts" && conflicts.length > 0 &&
+          <div className="note small">One person is filed on two or more faces in these photos, so at least one is wrong.
+            Double-click a face to open the photo and fix it there.</div>}
+        <FaceGrid faces={shown} selected={sel} setSelected={setSel} onHover={setHover} onOpen={setOpen}
           caption={view.kind === "review" ? (f) =>
             `${f.guess_person_id ? names[f.guess_person_id] : "?"} ${(f.score ?? 0).toFixed(2)}${f.second_pass ? " ·2nd" : ""}`
-            : undefined} />
+            : view.kind === "conflicts" ? (f) => `${f.person_id ? names[f.person_id] : ""} · ${f.filename}` : undefined} />
       </section>
 
       <aside className="preview">
         {hover?.thumb ? <img src={hover.thumb} alt="" /> : <div className="ph" />}
         <p className="muted small">{hover?.filename}</p>
+        {hover && <button onClick={() => setOpen(hover)}>Open photo</button>}
         <div className="help">
           Click to select, Shift-click for a range, <kbd>A</kbd> all, <kbd>Esc</kbd> none.<br />
-          <kbd>R</kbd> not them · <kbd>T</kbd> exclude from training (filters, heavy edits) ·
+          <kbd>R</kbd> not them · <kbd>F</kbd> not a face · <kbd>T</kbd> exclude from training (filters, heavy edits) ·
           <kbd>Y</kbd> accept guess in Review.<br />
           <b>auto</b> = filed by the matcher, not by you. Removing one stops it coming back.
         </div>
       </aside>
+      {open && <PhotoViewer photoId={open.photo_id} focusFaceId={open.id}
+        onClose={() => { setOpen(null); refresh().then(() => loadView(view)); }} onChange={onChange} />}
     </main>
   );
 }

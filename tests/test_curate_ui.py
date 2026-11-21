@@ -1,8 +1,6 @@
-import json
 
 import numpy as np
 from PIL import Image
-
 from studio.faces import curate
 from studio.faces.cli import main
 from studio.faces.workspace import Workspace
