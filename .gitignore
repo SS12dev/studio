@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+faces-run*/
+node_modules/
+dist/
+# never commit personal photos or face data
+data/
+photos/
+*.npy
