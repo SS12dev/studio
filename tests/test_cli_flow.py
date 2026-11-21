@@ -75,3 +75,36 @@ def test_scan_appends(tmp_path, monkeypatch):
     main(["scan", str(a), "-w", str(ws_dir)])  # re-scan is a no-op
     ws = Workspace(ws_dir)
     assert len(ws.faces) == 2 and ws.embeddings().shape == (2, 512)
+
+
+def test_second_pass_and_multi_group_naming(tmp_path):
+    rng = np.random.default_rng(3)
+    c = rng.standard_normal(512)
+    faces, embs = [], []
+    for i in range(10):
+        v = c + 0.5 * rng.standard_normal(512)
+        embs.append(v / np.linalg.norm(v))
+        usable = i < 8  # last two were set aside by the quality gate
+        faces.append({"id": f"/p/{i}.jpg#0", "photo": f"/p/{i}.jpg", "index": 0,
+                      "bbox": [0, 0, 50, 50], "usable": usable,
+                      "reject_reason": None if usable else "extreme_angle", "quality": {}})
+    stranger = rng.standard_normal(512)
+    embs.append(stranger / np.linalg.norm(stranger))
+    faces.append({"id": "/p/x.jpg#0", "photo": "/p/x.jpg", "index": 0, "bbox": [0, 0, 50, 50],
+                  "usable": False, "reject_reason": "blurry", "quality": {}})
+    ws = Workspace(tmp_path)
+    ws.save_faces(faces, np.array(embs))
+    ws.save_clusters({"clusters": {"Person 1": [f["id"] for f in faces[:3]],
+                                   "Person 2": [f["id"] for f in faces[3:5]]},
+                      "merge_suggestions": []})
+    main(["name", "Person 1,Person 2", "Alex", "-w", str(tmp_path)])
+    assert len(ws.people["Alex"]) == 5
+
+    main(["assign", "-w", str(tmp_path)])
+    d = json.loads((tmp_path / "decisions.json").read_text())
+    assert d["/p/8.jpg#0"]["second_pass"] and d["/p/8.jpg#0"]["person"] == "Alex"
+    assert "/p/x.jpg#0" not in d  # set-aside stranger stays aside, never becomes "new"
+
+    main(["assign", "--no-set-aside", "-w", str(tmp_path)])
+    d = json.loads((tmp_path / "decisions.json").read_text())
+    assert "/p/8.jpg#0" not in d

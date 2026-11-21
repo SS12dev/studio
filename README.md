@@ -39,8 +39,9 @@ uv run studio-faces scan ~/Pictures/studio-test -w runs/faces1
 uv run studio-faces cluster -w runs/faces1
 open runs/faces1/report.html
 
-# 3. Name the groups you recognise
+# 3. Name the groups you recognise (comma-separate groups that are the same person)
 uv run studio-faces name "Person 1" "Shivam" -w runs/faces1
+uv run studio-faces name "Person 4,Person 9" "Alex" -w runs/faces1
 
 # 4. Scan a second folder into the same workspace (only new photos are processed),
 #    then file them: confident ones go straight in, uncertain ones land in "Needs your answer"
@@ -51,6 +52,10 @@ uv run studio-faces confirm "/path/photo.jpg#0" "Shivam" -w runs/faces1   # or "
 # 5. Timings, memory, accuracy and (after 50 answers) the calibrated threshold
 uv run studio-faces stats -w runs/faces1
 ```
+
+`assign` also runs a second pass over faces the quality gate set aside (small, blurry, turned
+away). Those are matched only against people you already named, with thresholds 0.10 stricter,
+and never start new groups. Turn it off with `--no-set-aside`.
 
 Grouping uses average-linkage clustering at a 0.25 average cosine similarity. If two different
 people end up in one group, re-run `cluster --link-sim 0.3`; if one person is split across groups,

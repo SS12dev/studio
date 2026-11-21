@@ -159,15 +159,20 @@ def cmd_cluster(args) -> None:
 
 # name -----------------------------------------------------------------------
 def cmd_name(args) -> None:
+    """Name one or more groups; "Person 3,Person 7" gives both groups the same name (merge)."""
     ws = Workspace(args.workdir)
     clusters = ws.clusters().get("clusters", {})
-    if args.cluster not in clusters:
-        sys.exit(f"no cluster called {args.cluster!r}; run cluster first")
+    keys = [k.strip() for k in args.cluster.split(",") if k.strip()]
+    missing = [k for k in keys if k not in clusters]
+    if missing:
+        sys.exit(f"no group called {missing}; run cluster first (names are like \"Person 3\")")
     people = ws.people
-    people.setdefault(args.name, [])
-    people[args.name] = sorted(set(people[args.name]) | set(clusters[args.cluster]))
+    ids = set(people.get(args.name, []))
+    for k in keys:
+        ids |= set(clusters[k])
+    people[args.name] = sorted(ids)
     ws.save_people(people)
-    print(f"{args.name}: {len(people[args.name])} faces")
+    print(f"{args.name}: {len(ids)} faces")
 
 
 # assign -------------------------------------------------------------------
@@ -179,15 +184,33 @@ def cmd_assign(args) -> None:
         sys.exit("name at least one cluster first")
     cal = _calibrator(ws)
     th = RoutingThresholds(args.auto_score, args.auto_margin, args.new_below)
+    # Second pass for faces the quality gate set aside (small, blurry, turned away): they are
+    # only matched against people you already named, with stricter thresholds, and they never
+    # start new groups or become prototypes for others.
+    strict = RoutingThresholds(args.auto_score + args.strict_extra,
+                               args.auto_margin + args.strict_extra / 2,
+                               args.new_below + args.strict_extra)
     named = _named_ids(ws)
-    buckets: dict[str, list] = {"auto": [], "review": [], "new": []}
+    buckets: dict[str, list] = {"auto": [], "review": [], "new": [], "still_set_aside": []}
     decisions = {}
+    second_pass = 0
     for i, f in enumerate(faces):
-        if not f["usable"] or f["id"] in named:
+        if f["id"] in named:
             continue
-        d = decide(emb[i], idx, th, cal)
-        decisions[f["id"]] = d.__dict__
-        cap = f"{d.person} {d.score:.2f}" + (f" p={d.confidence:.2f}" if d.confidence else "")
+        if not f["usable"]:
+            if not args.include_set_aside:
+                continue
+            second_pass += 1
+            d = decide(emb[i], idx, strict, None)
+            if d.route == "new":
+                buckets["still_set_aside"].append((f["id"], f["reject_reason"], "new"))
+                continue
+        else:
+            d = decide(emb[i], idx, th, cal)
+        decisions[f["id"]] = {**d.__dict__, "second_pass": not f["usable"]}
+        tag = " (2nd pass)" if not f["usable"] else ""
+        cap = (f"{d.person} {d.score:.2f}" + (f" p={d.confidence:.2f}" if d.confidence else "")
+               + tag)
         buckets[d.route].append((f["id"], cap, d.route))
     (ws.root / "decisions.json").write_text(json.dumps(decisions, indent=2))
     note = f'Answer with <code>studio-faces confirm "FACE_ID" "Name" -w {ws.root}</code> (hover a face for its id; use "-" for nobody you know).'
@@ -195,10 +218,17 @@ def cmd_assign(args) -> None:
         ("Needs your answer", note, sorted(buckets["review"], key=lambda t: t[1])),
         ("Filed automatically", "", sorted(buckets["auto"], key=lambda t: t[1])),
         ("Possibly someone new", "Run cluster again to group these.", buckets["new"]),
+        ("Still set aside", "Low-quality faces that matched nobody strongly enough.",
+         buckets["still_set_aside"]),
     ])
     mode = "calibrated" if cal else "fixed thresholds"
     print(f"auto={len(buckets['auto'])} review={len(buckets['review'])} "
-          f"new={len(buckets['new'])} ({mode})\nopen {out}")
+          f"new={len(buckets['new'])} ({mode})")
+    if args.include_set_aside:
+        rescued = second_pass - len(buckets["still_set_aside"])
+        print(f"second pass over {second_pass} set-aside faces: {rescued} matched a named person "
+              f"(stricter thresholds), {len(buckets['still_set_aside'])} left aside")
+    print(f"open {out}")
 
 
 # confirm ------------------------------------------------------------------
@@ -262,12 +292,16 @@ def main(argv=None) -> None:
                    help="join groups whose average similarity is at least this (lower = fewer, "
                         "bigger groups; raise it if different people get merged)")
     n = add("name", cmd_name)
-    n.add_argument("cluster")
+    n.add_argument("cluster", help='a group like "Person 3", or several: "Person 3,Person 7"')
     n.add_argument("name")
     a = add("assign", cmd_assign)
     a.add_argument("--auto-score", type=float, default=0.55)
     a.add_argument("--auto-margin", type=float, default=0.10)
     a.add_argument("--new-below", type=float, default=0.35)
+    a.add_argument("--no-set-aside", dest="include_set_aside", action="store_false",
+                   help="skip the second pass over faces the quality gate set aside")
+    a.add_argument("--strict-extra", type=float, default=0.10,
+                   help="how much stricter the second pass is than the normal thresholds")
     f = add("confirm", cmd_confirm)
     f.add_argument("face")
     f.add_argument("name")

@@ -38,15 +38,16 @@ def sharpness_112(face_rgb: np.ndarray) -> float:
 def estimate_yaw_from_landmarks(kps: np.ndarray) -> float:
     """Rough yaw (degrees) from 5-point landmarks: eyes, nose, mouth corners.
 
-    0 when the nose sits midway between the eyes, approaching +/-90 as it reaches one eye.
-    Good enough to reject near-profile faces, not a real head-pose estimate.
+    Treats the nose tip as a point in front of the eye line, so its sideways offset grows
+    with sin(yaw): yaw = asin(2 * (rel - 0.5)). The first version was linear and called a
+    normal three-quarter view "extreme" (326 faces set aside in the second real run).
     """
     left_eye, right_eye, nose = kps[0], kps[1], kps[2]
     eye_span = right_eye[0] - left_eye[0]
     if abs(eye_span) < 1e-6:
         return 90.0
     rel = (nose[0] - left_eye[0]) / eye_span
-    return float(np.clip((rel - 0.5) * 2, -1, 1) * 90)
+    return float(np.degrees(np.arcsin(np.clip((rel - 0.5) * 2, -1, 1))))
 
 
 def assess(
