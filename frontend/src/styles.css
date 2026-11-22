@@ -122,3 +122,5 @@ kbd { background: #2c2c31; border-radius: 4px; padding: 0 5px; font-size: 12px; 
 .preview { width: 320px; border-left: 1px solid var(--line); padding: 14px; overflow: auto; }
 .preview img, .preview .ph { width: 100%; border-radius: 8px; aspect-ratio: 4/3; object-fit: contain; background: #1c1c20; }
 .help { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 12px; }
+.failures { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.failures summary { cursor: pointer; } .failures p { margin: 4px 0; }

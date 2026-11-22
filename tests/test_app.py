@@ -168,3 +168,17 @@ def test_copy_names_from_bakeoff_workspace(client):
     assert copy_names(c.app.state.lib, ws) == 3
     people = c.get("/api/people").json()
     assert people[0]["name"] == "Shivam Singh" and people[0]["faces"] == 5  # 3 named + 2 auto
+
+
+def test_failed_files_are_listed_with_reasons(client):
+    c, tmp = client
+    d = tmp / "mixed"
+    d.mkdir()
+    _photo(d / "ok.jpg", 0, 1)
+    (d / "broken1.jpg").write_bytes(b"not an image")
+    (d / "broken2.jpg").write_bytes(b"also not")
+    job = _wait(c, c.post("/api/imports/folder", json={"path": str(d)}).json()["job_id"])
+    assert job["added"] == 1 and job["failed"] == 2
+    why = c.get(f"/api/imports/{job['id']}/failures").json()
+    assert why["total"] == 2 and why["groups"][0]["count"] == 2
+    assert "UnidentifiedImageError" in why["groups"][0]["error"]

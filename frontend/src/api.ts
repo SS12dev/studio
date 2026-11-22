@@ -54,6 +54,8 @@ export const api = {
     return req<{ job_id: number }>("/api/imports/upload", { method: "POST", body: fd });
   },
   cancelImport: (id: number) => post(`/api/imports/${id}/cancel`),
+  importFailures: (id: number) => req<{ total: number; groups: { reason: string; count: number; examples: string[]; error: string }[] }>(
+    `/api/imports/${id}/failures`),
   photos: (offset = 0, limit = 120, personId?: number) =>
     req<{ total: number; items: PhotoItem[] }>(
       `/api/photos?offset=${offset}&limit=${limit}${personId ? `&person_id=${personId}` : ""}`),

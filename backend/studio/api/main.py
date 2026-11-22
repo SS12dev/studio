@@ -20,7 +20,7 @@ from sqlmodel import col, select
 
 from studio import __version__
 from studio.config import settings
-from studio.db import Face, ImportJob, Person, Photo
+from studio.db import Face, ImportFailure, ImportJob, Person, Photo
 from studio.library import importer, manual
 from studio.library.core import Library
 from studio.people import service as people
@@ -127,6 +127,21 @@ def create_app(lib: Library | None = None) -> FastAPI:
             if not job:
                 raise HTTPException(404)
             return job
+
+    @app.get("/api/imports/{job_id}/failures")
+    def import_failures(job_id: int) -> dict:
+        """Failures grouped by reason (numbers and paths stripped), with a few example files."""
+        with lib.session() as s:
+            rows = s.exec(select(ImportFailure).where(ImportFailure.job_id == job_id)).all()
+        groups: dict[str, dict] = {}
+        for r in rows:
+            key = re.sub(r"(/[^ :'\"]+)+|\d+", "…", r.error)[:200]
+            g = groups.setdefault(key, {"reason": key, "count": 0, "examples": [], "error": r.error})
+            g["count"] += 1
+            if len(g["examples"]) < 5:
+                g["examples"].append(r.path)
+        return {"total": len(rows),
+                "groups": sorted(groups.values(), key=lambda g: -g["count"])}
 
     @app.post("/api/imports/{job_id}/cancel")
     def import_cancel(job_id: int) -> dict:

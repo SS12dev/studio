@@ -105,6 +105,15 @@ class ImportJob(SQLModel, table=True):
     message: str | None = None
 
 
+class ImportFailure(SQLModel, table=True):
+    """One file an import could not read, with the reason, so you can see why and retry."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    job_id: int = Field(foreign_key="importjob.id", index=True)
+    path: str
+    error: str
+
+
 def make_engine(url: str):
     engine = create_engine(url, connect_args={"check_same_thread": False})
 

@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image
 from sqlmodel import select
 
-from studio.db import Face, ImportJob, Photo, now
+from studio.db import Face, ImportFailure, ImportJob, Photo, now
 from studio.faces.quality import QualityThresholds, assess
 from studio.ingest import SUPPORTED_EXTS, iter_images, load_rgb
 from studio.library.core import Library
@@ -95,7 +95,11 @@ def _run(lib: Library, job_id: int, paths: list[Path], copy_into_library: bool) 
                 counts["faces"] += result or 0
             except Exception as e:  # noqa: BLE001 - one bad file must not stop the import
                 counts["failed"] += 1
-                _update(lib, job_id, message=f"{path.name}: {type(e).__name__}: {e}")
+                err = f"{type(e).__name__}: {e}"
+                with lib.session() as s:
+                    s.add(ImportFailure(job_id=job_id, path=str(path), error=err[:2000]))
+                    s.commit()
+                _update(lib, job_id, message=f"{path.name}: {err}"[:500])
             counts["processed"] += 1
             _update(lib, job_id, **counts)
 

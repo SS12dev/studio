@@ -91,6 +91,7 @@ export default function Library({ onChange }: { onChange: () => void }) {
 function JobRow({ job }: { job: Job }) {
   const pct = job.total ? Math.round((100 * job.processed) / job.total) : 0;
   const active = job.status === "running" || job.status === "queued";
+  const [why, setWhy] = useState<Awaited<ReturnType<typeof api.importFailures>> | null>(null);
   return (
     <div className={`job ${job.status}`}>
       <div className="jobline">
@@ -101,10 +102,26 @@ function JobRow({ job }: { job: Job }) {
           {job.auto_filed ? `, ${job.auto_filed} filed to people` : ""}
           {job.failed ? `, ${job.failed} failed` : ""}
         </span>
+        {job.failed > 0 && <button className="link" onClick={async () =>
+          setWhy(why ? null : await api.importFailures(job.id))}>{why ? "hide" : "why?"}</button>}
         {active && <button onClick={() => api.cancelImport(job.id)}>Cancel</button>}
       </div>
       {active && <div className="bar"><div style={{ width: `${pct}%` }} /></div>}
       {job.message && job.status !== "done" && <div className="muted small">{job.message}</div>}
+      {why && (
+        <div className="failures small">
+          {why.total === 0 && <p className="muted">No details were saved for this import (it ran before
+            failure details existed). Import the folder again: photos already in the library are skipped and only
+            the failed ones are retried.</p>}
+          {why.groups.map((g) => (
+            <details key={g.reason}>
+              <summary><b>{g.count}×</b> {g.error}</summary>
+              {g.examples.map((x) => <div key={x} className="muted">{x}</div>)}
+            </details>
+          ))}
+          {why.total > 0 && <p className="muted">Import the folder again after a fix: only these files are retried.</p>}
+        </div>
+      )}
     </div>
   );
 }
