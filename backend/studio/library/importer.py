@@ -10,7 +10,7 @@ import hashlib
 import shutil
 import threading
 import traceback
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -38,8 +38,19 @@ def sha256_file(path: Path) -> str:
 def _taken_at(path: Path) -> datetime | None:
     try:
         exif = Image.open(path).getexif()
-        raw = exif.get_ifd(0x8769).get(36867) or exif.get(306)  # DateTimeOriginal, DateTime
-        return datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S") if raw else None
+        sub = exif.get_ifd(0x8769)
+        raw = sub.get(36867) or exif.get(306)  # DateTimeOriginal, DateTime
+        if not raw:
+            return None
+        taken = datetime.strptime(str(raw).strip("\x00 "), "%Y:%m:%d %H:%M:%S")
+        # The database stores timezone-aware times. Use the camera's offset when it wrote one
+        # (OffsetTimeOriginal); otherwise keep the wall-clock time and label it UTC.
+        off = str(sub.get(0x9011) or "").strip("\x00 ")
+        try:
+            tz = datetime.strptime(off, "%z").tzinfo if off else UTC
+        except ValueError:
+            tz = UTC
+        return taken.replace(tzinfo=tz)
     except Exception:  # noqa: BLE001 - no or odd EXIF is normal
         return None
 

@@ -182,3 +182,21 @@ def test_failed_files_are_listed_with_reasons(client):
     why = c.get(f"/api/imports/{job['id']}/failures").json()
     assert why["total"] == 2 and why["groups"][0]["count"] == 2
     assert "UnidentifiedImageError" in why["groups"][0]["error"]
+
+
+def test_exif_dates_are_stored(client):
+    c, tmp = client
+    d = tmp / "exif"
+    d.mkdir()
+    for name, extra in (("plain.jpg", {}), ("offset.jpg", {0x9011: "+05:30"})):
+        _photo(d / name, 0, 5)
+        im = Image.open(d / name)
+        exif = im.getexif()
+        sub = exif.get_ifd(0x8769)
+        sub[36867] = "2025:09:07 12:42:37"
+        sub.update(extra)
+        im.save(d / name, exif=exif)
+    job = _wait(c, c.post("/api/imports/folder", json={"path": str(d)}).json()["job_id"])
+    assert job["failed"] == 0 and job["added"] == 2, job["message"]
+    taken = sorted(p["taken_at"] for p in c.get("/api/photos").json()["items"])
+    assert all(t.startswith("2025-09-07") for t in taken)
